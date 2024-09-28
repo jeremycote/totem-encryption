@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.register_renegades.totem.network.SocketUDPListener
 import com.register_renegades.totem.network.UDPPacketSender
+import io.ktor.client.HttpClient
 import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +29,9 @@ fun sendPacket() {
     CoroutineScope(Dispatchers.IO).launch {
         val packetSender = UDPPacketSender()
         val data = "Hello, UDP!".toByteArray()
-        packetSender.sendPacket(data, targetAddress = "255.255.255.255", targetPort = 5000)
+
+//        packetSender.sendPacket(data, targetAddress = "255.255.255.255", targetPort = 5000)
+        packetSender.broadcastPacket(data, targetPort = 5000)
     }
 }
 

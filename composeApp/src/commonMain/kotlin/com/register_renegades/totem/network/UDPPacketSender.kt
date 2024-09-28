@@ -27,4 +27,10 @@ class UDPPacketSender {
         }
 
     }
+
+    suspend fun broadcastPacket(data: ByteArray, targetPort: Int) {
+        val socket = aSocket(selectorManager).udp().bind()
+        println(socket.localAddress)
+        socket.close()
+    }
 }

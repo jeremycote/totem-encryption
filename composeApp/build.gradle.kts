@@ -27,7 +27,7 @@ kotlin {
     ).forEach { iosTarget ->
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
-            isStatic = true
+            isStatic = false
         }
     }
     
@@ -131,4 +131,8 @@ sqldelight {
             packageName.set("com.register_renegades.totem.cache")
         }
     }
+}
+
+dependencies {
+    implementation(project(":shared"))
 }
