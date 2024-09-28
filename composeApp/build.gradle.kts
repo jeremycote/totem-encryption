@@ -118,3 +118,11 @@ compose.desktop {
         }
     }
 }
+
+sqldelight {
+    databases {
+        create("TotemDatabase") {
+            packageName.set("com.register_renegades.totem.cache")
+        }
+    }
+}

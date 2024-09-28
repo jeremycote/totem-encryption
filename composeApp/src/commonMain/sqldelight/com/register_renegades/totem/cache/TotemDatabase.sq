@@ -1,0 +1,33 @@
+CREATE TABLE Users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT
+);
+
+CREATE TABLE File (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT
+);
+
+CREATE TABLE Fragments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER,
+    fragment_data BLOB,
+    fragment_id INTEGER,
+    FOREIGN KEY (file_id) REFERENCES File(id)
+);
+
+-- A file is related to many users,
+-- We need to keep track of who has all the parts
+CREATE TABLE FileUsers (
+    user_id INTEGER,
+    file_id INTEGER,
+    FOREIGN KEY (user_id) REFERENCES Users(id),
+    FOREIGN KEY (file_id) REFERENCES File(id),
+    PRIMARY KEY (file_id, user_id)
+);
+
+selectAllFiles:
+SELECT File.* FROM File;
+
+insertFile:
+INSERT INTO File(name) VALUES(?);
