@@ -40,6 +40,9 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.android)
             implementation(libs.android.driver)
+            //implementation(libs.androidx.compose.material3)
+            //implementation(libs.androidx.lifecycle.viewmodel.compose)
+
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -57,6 +60,7 @@ kotlin {
             implementation(libs.runtime)
             implementation(libs.kotlinx.datetime)
             implementation(libs.koin.core)
+
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
