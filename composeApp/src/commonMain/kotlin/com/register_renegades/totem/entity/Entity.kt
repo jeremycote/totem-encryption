@@ -12,19 +12,12 @@ data class User (
     val name: String,
 ) {}
 
-@Serializable
 data class File (
     @SerialName("id")
     val id: Int,
 
     @SerialName("name")
-    val name: String,
-
-    @SerialName("fragments")
-    val fragments: Array<ByteArray>,
-
-    @SerialName("fragment_ids")
-    val fragmentIds: Array<Int>
+    val name: String
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
