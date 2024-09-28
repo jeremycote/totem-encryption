@@ -5,3 +5,13 @@ actual class InterfaceManager actual constructor(private val system: SystemInter
         return Interface(system.getIP(), system.getMask())
     }
 }
+
+class AndroidSystemInterfaceManager: SystemInterfaceManager {
+    override fun getIP(): String {
+        return ""
+    }
+
+    override fun getMask(): String {
+        return ""
+    }
+}
