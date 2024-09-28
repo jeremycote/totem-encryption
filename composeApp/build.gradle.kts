@@ -132,7 +132,3 @@ sqldelight {
         }
     }
 }
-
-dependencies {
-    implementation(project(":shared"))
-}
