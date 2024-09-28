@@ -1,7 +1,7 @@
 package com.register_renegades.totem.network
 
-actual class InterfaceManager {
+actual class InterfaceManager actual constructor(private val system: SystemInterfaceManager) {
     actual fun getInterface(): Interface {
-        TODO("Not yet implemented")
+        return Interface(system.getIP(), system.getMask())
     }
 }

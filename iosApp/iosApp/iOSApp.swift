@@ -20,7 +20,7 @@ struct iOSApp: App {
     
     init() {
         manager = SwiftInterfaceManager()
-        KoinHelperKt.doInitKoin(systemInterfaceManager: manager)
+        KoinHelperKt.doInitDependencies(systemInterfaceManager: manager)
     }
     
     var body: some Scene {

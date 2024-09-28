@@ -10,6 +10,7 @@ import androidx.compose.material.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.register_renegades.totem.network.InterfaceManager
 import com.register_renegades.totem.network.SocketUDPListener
 import com.register_renegades.totem.network.UDPPacketSender
 import io.ktor.client.HttpClient
@@ -18,12 +19,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.ui.tooling.preview.Preview
-
-import totemcrypto.composeapp.generated.resources.Res
-import totemcrypto.composeapp.generated.resources.compose_multiplatform
-import kotlin.collections.toByteArray
+import org.koin.core.component.KoinComponent
 
 fun sendPacket() {
     CoroutineScope(Dispatchers.IO).launch {
