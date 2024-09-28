@@ -28,7 +28,7 @@ fun sendPacket() {
     CoroutineScope(Dispatchers.IO).launch {
         val packetSender = UDPPacketSender()
         val data = "Hello, UDP!".toByteArray()
-        packetSender.sendPacket(data, targetAddress = "localhost", targetPort = 5000)
+        packetSender.sendPacket(data, targetAddress = "255.255.255.255", targetPort = 5000)
     }
 }
 
