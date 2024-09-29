@@ -71,6 +71,8 @@ class SocketTCP() {
                         val fileName = String(bytes.sliceArray(5 until packetSize))
 
                         val shouldAccept = delegate?.onRequestSaveFile(fileName, fileSize) ?: false
+
+                        sendChannel.writeByte(if (shouldAccept) 1 else 0)
                     }
 
                     getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_LOAD_FILE) -> {
@@ -93,39 +95,60 @@ class SocketTCP() {
 
     fun setDelegate(delegate: NetworkEventListener?) { this.delegate = delegate }
 
-    suspend fun initiateFileSave(target: String, port: Int, name: String, size: UInt) {
-        println("Initiating file save to $target:$port")
+    suspend fun initiateFileSave(targets: List<NetworkAddress>, name: String, contents: ByteArray) {
 
-        val socket = try { aSocket(selectorManager).tcp().connect(target, port) } catch (e: Exception) {
-            println("Failed to connect to $target:$port")
-            return
-        }
-        val sendChannel = socket.openWriteChannel(autoFlush = true)
-        val readChannel = socket.openReadChannel()
+        val sockets = MutableList<Socket?>(targets.size) { _ -> null }
 
-        val bytes: ByteArray = ByteArray(1 + 4 + name.length)
-        bytes[0] = getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_SAVE_FILE)
-        bytes[1] = (size shr 24).toByte()
-        bytes[2] = (size shr 16).toByte()
-        bytes[3] = (size shr 8).toByte()
-        bytes[4] = size.toByte()
-
-        for (i in name.indices) {
-            bytes[i + 5] = name[i].code.toByte()
+        try {
+            for (i in targets.indices) {
+                sockets[i] = aSocket(selectorManager).tcp().connect(targets[i].ip, targets[i].port)
+                println("Connected to ${targets[i].ip}:${targets[i].port}")
+            }
+        } catch (e: Exception) {
+            println("Failed to connect to targets")
         }
 
-        sendChannel.writeFully(bytes)
+        val fileSize = contents.size
 
-        println("Sent bytes to $target:$port")
+        var targetsAccepted = true
+        for (i in sockets.indices) {
 
-        val responseFirstByte = readChannel.readByte()
-        println("Response: $responseFirstByte")
+            if (sockets[i] == null) {
+                println("Socket was null")
+                targetsAccepted = false
+                continue
+            }
 
-        // Load the file
+            val sendChannel = sockets[i]?.openWriteChannel(autoFlush = true)
+            val readChannel = sockets[i]?.openReadChannel()
+
+            val bytes: ByteArray = ByteArray(1 + 4 + name.length)
+            bytes[0] = getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_SAVE_FILE)
+            bytes[1] = (fileSize shr 24).toByte()
+            bytes[2] = (fileSize shr 16).toByte()
+            bytes[3] = (fileSize shr 8).toByte()
+            bytes[4] = fileSize.toByte()
+
+            for (j in name.indices) {
+                bytes[j + 5] = name[j].code.toByte()
+            }
+
+            sendChannel?.writeFully(bytes)
+
+            println("Sent bytes to ${targets[i].ip}:${targets[i].port}")
+
+            val responseFirstByte = readChannel?.readByte()
+            println("Response: $responseFirstByte")
+
+            if (responseFirstByte?.toInt() == 0) {
+                println("User denied file save request")
+                targetsAccepted = false
+                return
+            }
+        }
+
         // Split the file
         // Send the file
-
-        socket.close()
     }
 
     fun initiateFileLoad(name: String) {

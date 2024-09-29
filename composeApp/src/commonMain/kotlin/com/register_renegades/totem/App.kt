@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.register_renegades.totem.network.NetworkAddress
 import com.register_renegades.totem.network.NetworkEventListener
 import com.register_renegades.totem.network.SocketTCP
 import io.ktor.utils.io.core.toByteArray
@@ -23,7 +24,10 @@ fun sendPacket() {
     CoroutineScope(Dispatchers.IO).launch {
         println("sendPacket coroutine launched")
         val sendSocket = SocketTCP()
-        sendSocket.initiateFileSave("127.0.0.1", 5004, "test.txt", 100u)
+
+        val target = NetworkAddress("127.0.0.1", 5004)
+        val file = ByteArray(1024)
+        sendSocket.initiateFileSave(listOf(target), "test.txt", file)
     }
 }
 
