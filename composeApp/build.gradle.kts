@@ -112,6 +112,8 @@ dependencies {
     implementation(libs.androidx.material3.android)
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation("io.coil-kt:coil-compose:2.7.0")
 }
 
 compose.desktop {
