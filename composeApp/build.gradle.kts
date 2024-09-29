@@ -110,6 +110,8 @@ android {
 dependencies {
     implementation(libs.accompanist.permissions)
     implementation(libs.androidx.material3.android)
+    implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.fragment.ktx)
 }
 
 compose.desktop {

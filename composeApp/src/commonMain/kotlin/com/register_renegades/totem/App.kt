@@ -18,6 +18,7 @@ import androidx.compose.material.Card
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
+import androidx.compose.material.TextField
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -28,6 +29,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.register_renegades.totem.disk.GalleryManager
@@ -73,6 +75,7 @@ class AppDelegate(private val saveFile: (String, Int) -> Boolean, private val lo
 fun App() {
     MaterialTheme {
         var imageSelected by remember { mutableStateOf<Boolean>(false) };
+        var fileName by remember {mutableStateOf<String>("File")}
         val dummyList: List<File> = listOf(
             File("Meme A", "Dank meme".toByteArray(), 0),
             File("Meme B", "Dank meme".toByteArray(), 1)
@@ -117,7 +120,7 @@ fun App() {
         }
 
         if(imageSelected){
-            DialogWithImage(onDismissRequest = {}, { sendImage() }, BitmapPainter(imageBitmap!!),"")
+            val dialog = DialogWithImage(BitmapPainter(imageBitmap!!),"",{imageSelected = false})
         }
 
         Column {
@@ -160,14 +163,19 @@ fun PlusButton(galleryManager:GalleryManager){
 fun sendImage():Unit{
 
 }
+//fun dialogDismiss():Unit{
+//    vardialogDismissFlag = true;
+//    return dialogDismissFlag
+//}
 @Composable
 fun DialogWithImage(
-    onDismissRequest: () -> Unit,
-    onConfirmation: () -> Unit,
     painter: Painter,
     imageDescription: String,
+    dismissDialog: () -> Unit,
+    //nameStoreFunc: () -> Unit
 ) {
-    Dialog(onDismissRequest = { onDismissRequest() }) {
+    var currentText by remember { mutableStateOf("")}
+    Dialog(onDismissRequest = { dismissDialog() }) {
         // Draw a rectangle shape with rounded corners inside the dialog
         Card(
             modifier = Modifier
@@ -190,34 +198,42 @@ fun DialogWithImage(
                         .height(160.dp)
                 )
                 Text(
-                    text = "This is a dialog with buttons and an image.",
+                    text = "Specify an alias for your file:",
                     modifier = Modifier.padding(16.dp),
                 )
+                TextField(value = currentText, onValueChange = {currentText = it},label = {Text("")})
                 Row(
                     modifier = Modifier
                         .fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                 ) {
                     TextButton(
-                        onClick = { onDismissRequest() },
+                        onClick = {dismissDialog()},
                         modifier = Modifier.padding(8.dp),
                     ) {
-                        Text("Dismiss")
+                        Text("Cancel")
                     }
-                    TextButton(
-                        onClick = { onConfirmation() },
-                        modifier = Modifier.padding(8.dp),
-                    ) {
-                        Text("Confirm")
+                    Button(onClick = {
+                        sendPacket()
+                        storeFileName()
+                        println(currentText)
+                    }) {
+                        Text("Send")
                     }
+//                    TextButton(
+//                        onClick = { onConfirmation() },
+//                        modifier = Modifier.padding(8.dp),
+//                    ) {
+//                        Text("Confirm")
+//                    }
                 }
             }
 
-            Button(onClick = {
-                sendPacket()
-            }) {
-                Text("Send")
-            }
         }
     }
 }
+
+fun storeFileName() {
+    TODO("Not yet implemented")
+}
+
