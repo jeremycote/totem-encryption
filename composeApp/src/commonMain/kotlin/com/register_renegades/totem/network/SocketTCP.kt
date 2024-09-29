@@ -100,14 +100,19 @@ class SocketTCP() {
 
                         val shouldAccept = delegate?.onRequestSaveFile(fileName, fileSize) ?: false
 
+                        println("Should accept: $shouldAccept")
                         sendChannel.writeByte(if (shouldAccept) 1 else 0)
 
-                        val fileBytes = ByteArray(fileSize / numShards)
-                        val numBytesReceived = receiveChannel.readFully(fileBytes, 0, fileBytes.size)
+//                        val fileBytes = ByteArray(fileSize / numUsers)
+                        println("Receiving file bytes!")
+                        val packet = receiveChannel.readRemaining((fileSize / numUsers).toLong())
+                        val fileBytes = packet.readBytes()
 
+                        println("Received file bytes!")
                         sendChannel.writeByte(1)
+                        sendChannel.close()
 
-                        println("File received! $fileName")
+                        println("File received! $fileName. Received num bytes: ${fileBytes.size}")
                         Services.shared.database?.insertFileWithContent(fileName, fileBytes, userId, userIps)
                     }
 
@@ -153,6 +158,16 @@ class SocketTCP() {
             }
         } catch (e: Exception) {
             println("Failed to connect to targets")
+        }
+
+        for (socket in sockets) {
+            if (socket == null) {
+                println("Socket was null")
+                for (socket in sockets) {
+                    socket?.close()
+                }
+                return false
+            }
         }
 
         val readChannels = MutableList<ByteReadChannel>(targets.size) { i -> sockets[i]!!.openReadChannel() }
@@ -239,12 +254,20 @@ class SocketTCP() {
                 var chunkIndex = 0
                 while (chunkIndex * shardSize < fileSize) {
                     if (chunkIndex % numUsers == userId) {
-                        writeChannels[i].writeAvailable(contents, chunkIndex * shardSize, if (((chunkIndex+1) * shardSize) < fileSize) shardSize else fileSize - (chunkIndex * shardSize))
+                        try {
+                            writeChannels[i].writeAvailable(contents, chunkIndex * shardSize, if (((chunkIndex+1) * shardSize) < fileSize) shardSize else fileSize - (chunkIndex * shardSize))
+                        } catch (E: Exception) {
+                            println("Error: ${E.message}")
+                        }
                     }
                     chunkIndex++
                 }
 
+                // Close to signal end
+                writeChannels[i].close()
+
                 // TODO: This hangs if initial file is smaller then n people * shardSize
+                println("Waiting for reception confirmation")
                 val received = readChannels[i].readByte()
 
                 if (received.toInt() == 0) {
@@ -264,8 +287,17 @@ class SocketTCP() {
             while (chunkIndex * shardSize < fileSize) {
                 // Local is user 0
                 if (chunkIndex % numUsers == 0) {
-                    contents.copyInto(localFile, localIndex * shardSize, chunkIndex * shardSize, if (((chunkIndex+1) * shardSize) < fileSize) shardSize else fileSize)
-                    localIndex++
+                    try {
+                        contents.copyInto(
+                            localFile,
+                            localIndex * shardSize,
+                            chunkIndex * shardSize,
+                            if (((chunkIndex + 1) * shardSize) < fileSize) ((chunkIndex + 1) * shardSize) else fileSize
+                        )
+                    } catch (E: Exception) {
+                        println("Error: ${E.message}")
+                    }
+                        localIndex++
                 }
                 chunkIndex++
             }
