@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Button
 import androidx.compose.material.ButtonDefaults
@@ -175,12 +177,13 @@ fun DialogWithImage(
     //nameStoreFunc: () -> Unit
 ) {
     var currentText by remember { mutableStateOf("")}
+    var destinations by remember { mutableStateOf(mutableListOf("1","2","3","4")) }
     Dialog(onDismissRequest = { dismissDialog() }) {
         // Draw a rectangle shape with rounded corners inside the dialog
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(375.dp)
+                .height(600.dp)
                 .padding(16.dp),
             shape = RoundedCornerShape(16.dp),
         ) {
@@ -202,6 +205,24 @@ fun DialogWithImage(
                     modifier = Modifier.padding(16.dp),
                 )
                 TextField(value = currentText, onValueChange = {currentText = it},label = {Text("")})
+                Text(text = "Specify the destination IP adresses:")
+                LazyColumn{
+                    items(
+                        items = destinations,
+                        key = {destination -> destination.hashCode()}) { destination ->
+                        DestinationField(destination)
+                    }
+//                    for(destination in destinations){
+//                        DestinationField(destination)
+//                    }
+//                    destinations.map { destination ->
+//                        DestinationField(destination)
+//                    }
+                }
+//                Button(onClick = {destinations.add("${destinations.size + 1}")
+//                println(destinations)}){
+//                    Text("+")
+//                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth(),
@@ -231,6 +252,11 @@ fun DialogWithImage(
 
         }
     }
+}
+@Composable
+fun DestinationField(ip:String){
+    var currentText by remember { mutableStateOf("")}
+    TextField(value = currentText, onValueChange = {currentText = it})
 }
 
 fun storeFileName() {
