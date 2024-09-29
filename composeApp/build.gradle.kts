@@ -112,6 +112,9 @@ android {
         debugImplementation(compose.uiTooling)
     }
 }
+dependencies {
+    implementation(libs.accompanist.permissions)
+}
 
 compose.desktop {
     application {
