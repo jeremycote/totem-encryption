@@ -210,7 +210,7 @@ fun DialogWithImage(
                     items(
                         items = destinations,
                         key = {destination -> destination.hashCode()}) { destination ->
-                        DestinationField(destination)
+                        DestinationField(destination,destinations,)
                     }
 //                    for(destination in destinations){
 //                        DestinationField(destination)
@@ -254,8 +254,9 @@ fun DialogWithImage(
     }
 }
 @Composable
-fun DestinationField(ip:String){
-    var currentText by remember { mutableStateOf("")}
+fun DestinationField(ip:String,ipList:List<String>){
+    val index = ipList.indexOf(ip)
+    var currentText by remember { mutableStateOf(ipList[index])}
     TextField(value = currentText, onValueChange = {currentText = it})
 }
 
