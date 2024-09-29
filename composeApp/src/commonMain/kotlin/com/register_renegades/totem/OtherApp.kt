@@ -56,7 +56,7 @@ fun sendPacket() {
 @Preview
 fun OtherApp() {
     MaterialTheme {
-        var imageSelected = false;
+        var imageSelected by remember { mutableStateOf<Boolean>(false) };
         val listener = SocketUDPListener(port = 5000)
         val dummyList: List<File> = listOf(File(1, "Dank meme"), File(1,"Homework"))
         val coroutineScope = rememberCoroutineScope()
@@ -74,8 +74,8 @@ fun OtherApp() {
                 }
             }
         }
-        //val filenameManager{}'
         if(imageSelected){
+            Text("Hello")
             DialogWithImage(onDismissRequest = {}, { sendImage() }, BitmapPainter(imageBitmap!!),"")
         }
         Column {
