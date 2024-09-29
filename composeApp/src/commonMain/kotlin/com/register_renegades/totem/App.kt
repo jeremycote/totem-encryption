@@ -182,18 +182,18 @@ fun App() {
                 columns = GridCells.Adaptive(minSize = 128.dp)
             ) {
                 items(files) { file ->
-                    FileItem(file)
+                    Button(
+                        onClick = { requestFile(file, listOf("127.0.0.1")) { file ->
+                            println("Received file: $file")
+                        }
+                    }){
+                        Text(file)
+                    }
                 }
             }
         }
     }
 
-}
-@Composable
-fun FileItem(name: String){
-    Button(onClick = {}){
-        Text(name)
-    }
 }
 @Composable
 fun PlusButton(galleryManager:GalleryManager){
