@@ -84,27 +84,46 @@ class Database(private val documentsDirectory: String) {
 
     // Method to insert a file with its content
     suspend fun insertFileWithContent(fileName: String, content: ByteArray, shardIndex: Int, userIps: List<String>) {
-        var numTries = 0
-        while (numTries < 5) {
-            try {
-                val database = openDatabase()
+        val database = openDatabase()
 
+        while (true) {
+            try {
                 // Insert the file name first to get its ID
-                database.prepare("""
+                database.prepare(
+                    """
                 INSERT INTO File (name, fragment_data, fragment_id) VALUES (?, ?, ?);
-            """.trimIndent()).use { statement ->
+            """.trimIndent()
+                ).use { statement ->
                     statement.bindText(1, fileName)
                     statement.bindBlob(2, content)
                     statement.bindInt(3, shardIndex)
                     statement.step()
                 }
 
-                val fileId = database.prepare("SELECT last_insert_rowid();").use { statement ->
+                break
+            } catch (E: Exception) {
+                println("Database Error: ${E.message}")
+                delay(10)
+            }
+        }
+
+        var fileId: Long
+        while (true) {
+            try {
+                fileId = database.prepare("SELECT last_insert_rowid();").use { statement ->
                     statement.step()
                     statement.getLong(0)
                 }
+                break
+            } catch (E: Exception) {
+                println("Database Error: ${E.message}")
+                delay(10)
+            }
+        }
 
-                for (ip in userIps) {
+        for (ip in userIps) {
+            while (true) {
+                try {
                     // Insert user ips into the db
                     database.prepare("""
                         INSERT OR IGNORE INTO User (ip) VALUES (?);
@@ -112,24 +131,32 @@ class Database(private val documentsDirectory: String) {
                         statement.bindInt(1, convertIPToInt(ip))
                         statement.step()
                     }
-
-                    database.prepare("""
-                        INSERT INTO FileUsers (user_id, file_id) VALUES (?, ?);
-                    """.trimIndent()).use { statement ->
-                            statement.bindInt(1, convertIPToInt(ip))
-                            statement.bindLong(2, fileId)
-                            statement.step()
-                        }
+                        break
+                    } catch (E: Exception) {
+                    println("Database Error: ${E.message}")
+                    delay(10)
                 }
+            }
 
-                database.close()
-                return
-            } catch (E: Exception) {
-                println("Database Error: ${E.message}")
-                numTries++
-                delay(10)
+            while (true) {
+                try {
+                    database.prepare("""
+                INSERT INTO FileUsers (user_id, file_id) VALUES (?, ?);
+            """.trimIndent()).use { statement ->
+                        statement.bindInt(1, convertIPToInt(ip))
+                        statement.bindLong(2, fileId)
+                        statement.step()
+                    }
+                    break
+                } catch (E: Exception) {
+                    println("Database Error: ${E.message}")
+                    delay(10)
+                }
             }
         }
+
+        database.close()
+        return
     }
 
     // Accessor method to retrieve a file by ID

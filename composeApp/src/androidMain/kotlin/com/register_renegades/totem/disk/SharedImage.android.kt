@@ -29,3 +29,12 @@ actual class SharedImage(private val bitmap: android.graphics.Bitmap?) {
         }
     }
 }
+
+actual fun createImageBitmap(bytes: ByteArray): ImageBitmap? {
+    try {
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size).asImageBitmap()
+    } catch (E: Exception) {
+        println("Failed to decode image")
+        return null
+    }
+}

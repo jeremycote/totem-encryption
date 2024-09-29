@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.register_renegades.totem.disk.GalleryManager
+import com.register_renegades.totem.disk.createImageBitmap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -63,8 +64,8 @@ fun requestFile(name: String, targets: List<String>, onFileReceived: (ByteArray?
     CoroutineScope(Dispatchers.IO).launch {
         val sendSocket = SocketTCP()
 
-        val targets = targets.map { target -> NetworkAddress(target, 5004)}
-        val file = sendSocket.initiateFileLoad(targets, "test.txt")
+        val addresses = targets.map { target -> NetworkAddress(target, 5004)}
+        val file = sendSocket.initiateFileLoad(addresses, name)
 
         if (file != null) {
             println("Successfully loaded $name")
@@ -89,9 +90,13 @@ class AppDelegate(private val saveFile: (String, Int) -> Boolean, private val lo
 @Preview
 fun App() {
     MaterialTheme {
-        var imageSelected by remember { mutableStateOf(false) };
+        var imageSelected by remember { mutableStateOf(false) }
+        var imageLoaded by remember { mutableStateOf(false) }
+        var selectorExpanded by remember { mutableStateOf(false) }
         var fileName by remember {mutableStateOf("File")}
         val files by remember { mutableStateOf(Services.shared.database?.getAllFileNames() ?: listOf()) }
+
+        var destinations by remember { mutableStateOf(mutableListOf("127.0.0.1", "", "", "")) }
 
         var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
         var imageBytes by remember { mutableStateOf<ByteArray?>(null) }
@@ -131,9 +136,23 @@ fun App() {
             }
         }
 
+        if (imageLoaded && imageBytes != null) {
+            Dialog(onDismissRequest = {
+                imageLoaded = false
+            }) {
+                val bitmap = createImageBitmap(imageBytes!!)
+                if (bitmap != null) {
+                    Image(bitmap = bitmap, contentDescription = "Image")
+                }
+                Button(onClick = {imageLoaded = false}) {
+                    Text("Dismiss")
+                }
+            }
+        }
+
         if(imageSelected){
-            val dialog = DialogWithImage(BitmapPainter(imageBitmap!!),"", {imageSelected = false}) { name, targets ->
-                println("Sending $name to $targets")
+            val dialog = DialogWithImage(BitmapPainter(imageBitmap!!),"", {imageSelected = false}) { name ->
+                println("Sending $name to $destinations")
 
                 if (imageBytes == null) {
                     throw IllegalArgumentException("Image bytes is null")
@@ -141,13 +160,11 @@ fun App() {
 
                 val realTargets = MutableList(0) { _ -> "" }
 
-                for (target in targets) {
+                for (target in destinations) {
                     if (target != "") {
                         realTargets.add(target)
                     }
                 }
-
-                println("targets: $targets $realTargets")
 
                 sendFile(name, realTargets, imageBytes!!) { success ->
                     println("Sent file: $success")
@@ -157,36 +174,78 @@ fun App() {
             }
         }
 
+        if (selectorExpanded) {
+            Dialog(onDismissRequest = {selectorExpanded=false}) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(600.dp)
+                        .padding(16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(text = "Specify the destination IP adresses:")
+
+                        for (i in 0..<4) {
+                            DestinationField(destinations[i]) { newText ->
+                                destinations[i] = newText
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Button(onClick = {selectorExpanded = false}) {
+                                Text("Save")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Column {
             Text("${Services.shared.interfaceManager?.getInterface()?.ipAddress}:$port")
-            Button(onClick = { sendFile("meme.png", listOf("127.0.0.1"), ByteArray(1500)) { success ->
-                println(
-                    "Sent file: $success"
-                )
-            }
-            }) {
-                Text("Send")
-            }
-            Button(onClick = { requestFile("meme.png", listOf("127.0.0.1")) { file ->
-                println(
-                    "Sent file: $file"
-                )
-            }
-            }) {
-                Text("Receive")
-            }
-            Text(text="Totem Crypto")//, textAlign = Center)
+            Text(text="Totem Crypto")
             PlusButton(galleryManager)
+            Button(onClick = {
+                selectorExpanded = !selectorExpanded
+            }) {
+                Text(text = "Select Network Members")
+            }
             Text(text = "Encrypted Files")
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 128.dp)
             ) {
                 items(files) { file ->
                     Button(
-                        onClick = { requestFile(file, listOf("127.0.0.1")) { file ->
-                            println("Received file: $file")
-                        }
-                    }){
+                        onClick = {
+                            val realTargets = MutableList(0) { _ -> "" }
+
+                            for (target in destinations) {
+                                if (target != "") {
+                                    realTargets.add(target)
+                                }
+                            }
+
+                            requestFile(file, realTargets) { file ->
+                                println("Received file: $file")
+
+                                if (file != null) {
+                                    println("Image is intact!")
+
+                                    imageBytes = file
+                                    imageLoaded = true
+                                }
+                            }
+                        }){
                         Text(file)
                     }
                 }
@@ -202,22 +261,15 @@ fun PlusButton(galleryManager:GalleryManager){
         Text(text="Encrypt file")
     }
 }
-fun sendImage():Unit{
 
-}
-//fun dialogDismiss():Unit{
-//    vardialogDismissFlag = true;
-//    return dialogDismissFlag
-//}
 @Composable
 fun DialogWithImage(
     painter: Painter,
     imageDescription: String,
     dismissDialog: () -> Unit,
-    submitDialog: (name: String, targets: List<String>) -> Unit
+    submitDialog: (name: String) -> Unit
 ) {
     var currentText by remember { mutableStateOf("")}
-    var destinations by remember { mutableStateOf(mutableListOf("", "", "", "")) }
     Dialog(onDismissRequest = { dismissDialog() }) {
         // Draw a rectangle shape with rounded corners inside the dialog
         Card(
@@ -245,13 +297,6 @@ fun DialogWithImage(
                     modifier = Modifier.padding(16.dp),
                 )
                 TextField(value = currentText, onValueChange = {currentText = it},label = {Text("")})
-                Text(text = "Specify the destination IP adresses:")
-
-                for (i in 0..<4) {
-                    DestinationField(destinations[i]) { newText ->
-                        destinations[i] = newText
-                    }
-                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth(),
@@ -264,7 +309,7 @@ fun DialogWithImage(
                         Text("Cancel")
                     }
                     Button(onClick = {
-                        submitDialog(currentText, destinations)
+                        submitDialog(currentText)
                     }) {
                         Text("Send")
                     }
@@ -275,7 +320,7 @@ fun DialogWithImage(
 }
 @Composable
 fun DestinationField(ip:String, onValueChange: (String) -> Unit){
-    var currentText by remember {mutableStateOf("")}
+    var currentText by remember {mutableStateOf(ip)}
     TextField(value = currentText, onValueChange = {
         currentText = it
         onValueChange(it)

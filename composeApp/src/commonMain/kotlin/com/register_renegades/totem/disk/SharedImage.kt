@@ -6,3 +6,5 @@ expect class SharedImage {
     fun toByteArray(): ByteArray?
     fun toImageBitmap(): ImageBitmap?
 }
+
+expect fun createImageBitmap(bytes: ByteArray): ImageBitmap?

@@ -11,3 +11,7 @@ actual class SharedImage {
         TODO("Not yet implemented")
     }
 }
+
+actual fun createImageBitmap(bytes: ByteArray): ImageBitmap? {
+    TODO("Not yet implemented")
+}

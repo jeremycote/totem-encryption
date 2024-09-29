@@ -41,3 +41,7 @@ actual class SharedImage(private val image: UIImage?) {
         const val COMPRESSION_QUALITY = 0.99
     }
 }
+
+actual fun createImageBitmap(bytes: ByteArray): ImageBitmap? {
+    return Image.makeFromEncoded(bytes).toComposeImageBitmap()
+}

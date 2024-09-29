@@ -105,7 +105,7 @@ class SocketTCP() {
 
 //                        val fileBytes = ByteArray(fileSize / numUsers)
                         println("Receiving file bytes!")
-                        val packet = receiveChannel.readRemaining((fileSize / numUsers).toLong())
+                        val packet = receiveChannel.readRemaining()
                         val fileBytes = packet.readBytes()
 
                         println("Received file bytes!")
@@ -125,15 +125,12 @@ class SocketTCP() {
 
                         val fileName = String(bytes.sliceArray(1 until packetSize))
 
-                        val localFile = Services.shared.database?.getFileByName(fileName)
-
-                        if (localFile == null) {
-                            return
-                        }
+                        val localFile = Services.shared.database?.getFileByName(fileName) ?: return
 
                         // Prompt user
-                        if (!(delegate?.onRequestLoadFile(fileName) ?: false)) { return }
+                        if (delegate?.onRequestLoadFile(fileName) != true) { return }
 
+                        sendChannel.writeByte(localFile.shardIndex)
                         sendChannel.writeFully(localFile.content)
                     }
                 }
@@ -328,48 +325,89 @@ class SocketTCP() {
             println("Failed to connect to targets")
         }
 
-        val readChannels = MutableList<ByteReadChannel>(targets.size) { i -> sockets[i]!!.openReadChannel() }
-        val writeChannels = MutableList<ByteWriteChannel>(targets.size) { i -> sockets[i]!!.openWriteChannel(autoFlush = true) }
+        try {
+            val readChannels = MutableList(targets.size) { i -> sockets[i]!!.openReadChannel() }
+            val writeChannels =
+                MutableList(targets.size) { i -> sockets[i]!!.openWriteChannel(autoFlush = true) }
 
-        val localFragment = Services.shared.database?.getFileByName(name)
+            val localFragment = Services.shared.database?.getFileByName(name)
 
-        if (localFragment == null) {
-            println("File not found in local database")
-            for (socket in sockets) {
-                socket?.close()
-            }
-            return null
-        }
-
-        val fileSize = localFragment.content.size * localFragment.userIps.size
-        val fileBuffer = ByteArray(fileSize)
-
-        for (i in targets.indices) {
-            writeChannels[i].writeByte(getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_LOAD_FILE))
-            writeChannels[i].writeStringUtf8(name)
-        }
-
-        // TODO: What if local fragment is not same size as everyone else?
-        for (i in targets.indices) {
-            val chunk = ByteArray(localFragment.content.size)
-
-            if (readChannels[i].readAvailable(chunk) != chunk.size) {
+            if (localFragment == null) {
+                println("File not found in local database")
                 for (socket in sockets) {
                     socket?.close()
                 }
                 return null
             }
 
+            val userId = localFragment.shardIndex
+            val fileSize = localFragment.content.size * localFragment.userIps.size
+            val fileBuffer = ByteArray(fileSize)
+
+            for (i in targets.indices) {
+                writeChannels[i].writeByte(getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_LOAD_FILE))
+                writeChannels[i].writeStringUtf8(name)
+            }
+
+            // TODO: What if local fragment is not same size as everyone else?
+            for (i in targets.indices) {
+                val chunk = ByteArray(localFragment.content.size)
+
+                val shardId = readChannels[i].readByte()
+
+                if (readChannels[i].readAvailable(chunk) != chunk.size) {
+                    for (socket in sockets) {
+                        socket?.close()
+                    }
+                    return null
+                }
+
+                var chunkIndex = 0
+                var localIndex = 0
+                while (chunkIndex * shardSize < fileSize) {
+                    // Local is user 0, so start at 1
+                    if (chunkIndex % localFragment.userIps.size == shardId.toInt()) {
+                        chunk.copyInto(
+                            fileBuffer,
+                            chunkIndex * shardSize,
+                            localIndex * shardSize,
+                            if (((localIndex + 1) * shardSize) < chunk.size) ((localIndex + 1) * shardSize) else chunk.size
+                        )
+                        localIndex++
+                    }
+                    chunkIndex++
+                }
+            }
+
             var chunkIndex = 0
+            var localIndex = 0
             while (chunkIndex * shardSize < fileSize) {
-                // Local is user 0, so start at 1
-                if (chunkIndex % localFragment.userIps.size == i + 1) {
-                    chunk.copyInto(fileBuffer, chunkIndex * shardSize, if ((chunkIndex * (shardSize+1)) < fileSize) shardSize else fileSize - (chunkIndex * shardSize))
+                // TODO: You might not be the local user when stored
+                if (chunkIndex % localFragment.userIps.size == userId) {
+                    localFragment.content.copyInto(
+                        fileBuffer,
+                        chunkIndex * shardSize,
+                        localIndex * shardSize,
+                        if (((localIndex + 1) * shardSize) < localFragment.content.size) ((localIndex + 1) * shardSize) else localFragment.content.size
+                    )
+                    localIndex++
                 }
                 chunkIndex++
             }
+
+            for (socket in sockets) {
+                socket?.close()
+            }
+
+            return fileBuffer
+        } catch (E: Exception) {
+            println("Error: ${E.message}")
+        } finally {
+            for (socket in sockets) {
+                socket?.close()
+            }
         }
 
-        return fileBuffer
+        return null
     }
 }
