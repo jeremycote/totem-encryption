@@ -12,6 +12,7 @@ androidx-lifecycle = "2.8.0"
 androidx-material = "1.12.0"
 androidx-test-junit = "1.2.1"
 compose-plugin = "1.6.11"
+jmdns = "3.5.8"
 junit = "4.13.2"
 kotlin = "2.0.20"
 kotlinx-coroutines = "1.8.1"
@@ -24,6 +25,7 @@ lifecycleViewmodelCompose = "2.7.0"
 material3 = "1.2.0"
 
 [libraries]
+jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
