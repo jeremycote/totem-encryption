@@ -6,6 +6,7 @@ import androidx.sqlite.driver.bundled.SQLITE_OPEN_CREATE
 import androidx.sqlite.driver.bundled.SQLITE_OPEN_READWRITE
 import androidx.sqlite.execSQL
 import androidx.sqlite.use
+import kotlinx.coroutines.delay
 
 class Database(private val documentsDirectory: String) {
 
@@ -24,13 +25,12 @@ class Database(private val documentsDirectory: String) {
 
 //            database.execSQL("DROP TABLE FileUsers;")
 //            database.execSQL("DROP TABLE File;")
-//            database.execSQL("DROP TABLE Users;")
+//            database.execSQL("DROP TABLE User;")
 
             database.execSQL(
                 """
                     CREATE TABLE IF NOT EXISTS User (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT
+                        ip INTEGER PRIMARY KEY
                     );
                     """)
 
@@ -49,7 +49,6 @@ class Database(private val documentsDirectory: String) {
                     CREATE TABLE IF NOT EXISTS FileUsers (
                         user_id INTEGER,
                         file_id INTEGER,
-                        user_ip TEXT,
                         FOREIGN KEY (user_id) REFERENCES User(id),
                         FOREIGN KEY (file_id) REFERENCES File(id),
                         PRIMARY KEY (file_id, user_id)
@@ -64,19 +63,16 @@ class Database(private val documentsDirectory: String) {
         }
     }
 
-    fun getAllFiles(): List<File> {
-        val files = mutableListOf<File>()
+    fun getAllFileNames(): List<String> {
+        val files = mutableListOf<String>()
 
         try {
             val database = openDatabase()
 
-            database.prepare("SELECT * FROM File").use { statement ->
+            database.prepare("SELECT File.name FROM File").use { statement ->
                 while (statement.step()) {
-                    val name = statement.getText(1)
-                    val content = statement.getBlob(2)
-                    val shardIndex = statement.getInt(3)
-
-                    files.add(File(name, content,shardIndex))
+                    val name = statement.getText(0)
+                    files.add(name)
                 }
             }
         } catch (E: Exception) {
@@ -87,7 +83,7 @@ class Database(private val documentsDirectory: String) {
     }
 
     // Method to insert a file with its content
-    fun insertFileWithContent(fileName: String, content: ByteArray, shardIndex: Int) {
+    suspend fun insertFileWithContent(fileName: String, content: ByteArray, shardIndex: Int, userIps: List<String>) {
         var numTries = 0
         while (numTries < 5) {
             try {
@@ -95,33 +91,43 @@ class Database(private val documentsDirectory: String) {
 
                 // Insert the file name first to get its ID
                 database.prepare("""
-                INSERT INTO File (name, fragment_data, fragment_id) VALUES (?, ?, ?)
+                INSERT INTO File (name, fragment_data, fragment_id) VALUES (?, ?, ?);
             """.trimIndent()).use { statement ->
                     statement.bindText(1, fileName)
                     statement.bindBlob(2, content)
                     statement.bindInt(3, shardIndex)
                     statement.step()
                 }
-//
-//            val fileId = database.prepare("SELECT last_insert_rowid()").use { statement ->
-//                statement.step()
-//                statement.getLong(0)
-//            }
-//
-//            // Insert the content as a fragment
-//            database.prepare("""
-//                INSERT INTO Fragments (file_id, fragment_data, fragment_id) VALUES (?, ?, ?)
-//            """.trimIndent()).use { statement ->
-//                statement.bindLong(1, fileId)
-//                statement.bindBlob(2, content)
-//                statement.bindLong(3, shardIndex.toLong())
-//                statement.step()
-//            }
+
+                val fileId = database.prepare("SELECT last_insert_rowid();").use { statement ->
+                    statement.step()
+                    statement.getLong(0)
+                }
+
+                for (ip in userIps) {
+                    // Insert user ips into the db
+                    database.prepare("""
+                        INSERT OR IGNORE INTO User (ip) VALUES (?);
+                    """.trimIndent()).use { statement ->
+                        statement.bindInt(1, convertIPToInt(ip))
+                        statement.step()
+                    }
+
+                    database.prepare("""
+                        INSERT INTO FileUsers (user_id, file_id) VALUES (?, ?);
+                    """.trimIndent()).use { statement ->
+                            statement.bindInt(1, convertIPToInt(ip))
+                            statement.bindLong(2, fileId)
+                            statement.step()
+                        }
+                }
 
                 database.close()
                 return
             } catch (E: Exception) {
                 println("Database Error: ${E.message}")
+                numTries++
+                delay(10)
             }
         }
     }
@@ -131,22 +137,40 @@ class Database(private val documentsDirectory: String) {
         try {
             val database = openDatabase()
 
+            var file = File(0, "", ByteArray(0), 0, listOf())
+            val users = MutableList<String>(4) { _ -> ""}
+
             // Retrieve the file name and content
             database.prepare("""
-                SELECT f.name, fr.fragment_data, fr.fragment_id
-                FROM File f 
-                WHERE f.name = ?
+                SELECT 
+                    f.id AS file_id,
+                    f.name AS file_name,
+                    f.fragment_data AS fragment_data,
+                    f.fragment_id AS fragment_id,
+                    u.ip AS user_ip
+                FROM 
+                    File f
+                JOIN 
+                    FileUsers fu ON f.id = fu.file_id
+                JOIN 
+                    User u ON fu.user_id = u.ip
+                WHERE 
+                    f.name = ?;
             """.trimIndent()).use { statement ->
                 statement.bindText(1, name)
-                if (statement.step()) {
-                    val name = statement.getText(0)
-                    val content = statement.getBlob(1)
-                    val fragmentId = statement.getInt(2)
+                while (statement.step()) {
+                    val id = statement.getInt(0)
+                    val name = statement.getText(1)
+                    val content = statement.getBlob(2)
+                    val fragmentId = statement.getInt(3)
+                    val ip = statement.getInt(4)
 
-                    return File(name, content, fragmentId)
+                    users.add(convertIntToIP(ip))
+                    file = File(id, name, content, fragmentId, users)
                 }
             }
             database.close()
+            return file
         } catch (E: Exception) {
             println("Database Error: ${E.message}")
         }

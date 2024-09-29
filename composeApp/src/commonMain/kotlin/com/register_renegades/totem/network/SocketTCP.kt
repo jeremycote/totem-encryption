@@ -109,7 +109,7 @@ class SocketTCP() {
 
                         if (numBytesReceived == fileSize / numShards) {
                             println("File received! $fileName")
-                            Services.shared.database?.insertFileWithContent(fileName, fileBytes, userId)
+                            Services.shared.database?.insertFileWithContent(fileName, fileBytes, userId, userIps)
                         }
                     }
 
@@ -121,6 +121,17 @@ class SocketTCP() {
                         if (packetSize < 2) { return }
 
                         val fileName = String(bytes.sliceArray(1 until packetSize))
+
+                        val localFile = Services.shared.database?.getFileByName(fileName)
+
+                        if (localFile == null) {
+                            return
+                        }
+
+                        // Prompt user
+                        if (!(delegate?.onRequestLoadFile(fileName) ?: false)) { return }
+
+                        sendChannel.writeFully(localFile.content)
                     }
                 }
             } catch (e: Exception) {
@@ -152,6 +163,8 @@ class SocketTCP() {
         val fileSize = contents.size
         val numUsers = targets.size + 1
         val numShards = if (contents.size % shardSize == 0) (contents.size / shardSize) else (contents.size / shardSize) + 1
+
+        val allUsers = targets + NetworkAddress(Services.shared.interfaceManager!!.getInterface().ipAddress, 0)
 
         var targetsAccepted = true
         for (i in sockets.indices) {
@@ -192,8 +205,6 @@ class SocketTCP() {
                 return false
             }
 
-            val allUsers = targets + NetworkAddress(Services.shared.interfaceManager!!.getInterface().ipAddress, 0)
-
             for (j in 0..<numUsers) {
                 val targetIp = allUsers[j].getRawIp()
                 for (k in 0..<4) {
@@ -219,6 +230,8 @@ class SocketTCP() {
             }
         }
 
+        println("Targets accepted: $targetsAccepted")
+
         var sendSuccessful = true
         if (targetsAccepted) {
             // Split the file
@@ -228,11 +241,12 @@ class SocketTCP() {
                 var chunkIndex = 0
                 while (chunkIndex * shardSize < fileSize) {
                     if (chunkIndex % numUsers == userId) {
-                        writeChannels[i].writeFully(contents, chunkIndex * shardSize, if ((chunkIndex * (shardSize+1)) < fileSize) shardSize else fileSize - (chunkIndex * shardSize))
+                        writeChannels[i].writeAvailable(contents, chunkIndex * shardSize, if (((chunkIndex+1) * shardSize) < fileSize) shardSize else fileSize - (chunkIndex * shardSize))
                     }
                     chunkIndex++
                 }
 
+                // TODO: This hangs if initial file is smaller then n people * shardSize
                 val received = readChannels[i].readByte()
 
                 if (received.toInt() == 0) {
@@ -240,32 +254,92 @@ class SocketTCP() {
                     sendSuccessful = false
                     continue
                 }
+                println("Received acknowledged")
             }
         }
 
         if (targetsAccepted and sendSuccessful) {
-            val localFile = ByteArray(fileSize / numUsers)
+            println("Preparing sender to local database")
+            val localFile = ByteArray(fileSize)
             var chunkIndex = 0
+            var localIndex = 0
             while (chunkIndex * shardSize < fileSize) {
                 // Local is user 0
                 if (chunkIndex % numUsers == 0) {
-                    contents.copyInto(localFile, chunkIndex * shardSize, if ((chunkIndex * (shardSize+1)) < fileSize) shardSize else fileSize - (chunkIndex * shardSize))
+                    contents.copyInto(localFile, localIndex * shardSize, chunkIndex * shardSize, if (((chunkIndex+1) * shardSize) < fileSize) shardSize else fileSize)
+                    localIndex++
                 }
                 chunkIndex++
             }
 
             // Insert file into local database
-            Services.shared.database?.insertFileWithContent(name, localFile, 0)
+            println("Saving sender to local database")
+            Services.shared.database?.insertFileWithContent(name, localFile, 0, allUsers.map { address -> address.ip })
         }
 
         for (socket in sockets) {
             socket?.close()
         }
 
+        println("File sent!")
+
         return targetsAccepted and sendSuccessful
     }
 
-    fun initiateFileLoad(name: String) {
+    suspend fun initiateFileLoad(targets: List<NetworkAddress>, name: String): ByteArray? {
+        val sockets = MutableList<Socket?>(targets.size) { _ -> null }
 
+        try {
+            for (i in targets.indices) {
+                sockets[i] = aSocket(selectorManager).tcp().connect(targets[i].ip, targets[i].port)
+                println("Connected to ${targets[i].ip}:${targets[i].port}")
+            }
+        } catch (e: Exception) {
+            println("Failed to connect to targets")
+        }
+
+        val readChannels = MutableList<ByteReadChannel>(targets.size) { i -> sockets[i]!!.openReadChannel() }
+        val writeChannels = MutableList<ByteWriteChannel>(targets.size) { i -> sockets[i]!!.openWriteChannel(autoFlush = true) }
+
+        val localFragment = Services.shared.database?.getFileByName(name)
+
+        if (localFragment == null) {
+            println("File not found in local database")
+            for (socket in sockets) {
+                socket?.close()
+            }
+            return null
+        }
+
+        val fileSize = localFragment.content.size * localFragment.userIps.size
+        val fileBuffer = ByteArray(fileSize)
+
+        for (i in targets.indices) {
+            writeChannels[i].writeByte(getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_LOAD_FILE))
+            writeChannels[i].writeStringUtf8(name)
+        }
+
+        // TODO: What if local fragment is not same size as everyone else?
+        for (i in targets.indices) {
+            val chunk = ByteArray(localFragment.content.size)
+
+            if (readChannels[i].readAvailable(chunk) != chunk.size) {
+                for (socket in sockets) {
+                    socket?.close()
+                }
+                return null
+            }
+
+            var chunkIndex = 0
+            while (chunkIndex * shardSize < fileSize) {
+                // Local is user 0, so start at 1
+                if (chunkIndex % localFragment.userIps.size == i + 1) {
+                    chunk.copyInto(fileBuffer, chunkIndex * shardSize, if ((chunkIndex * (shardSize+1)) < fileSize) shardSize else fileSize - (chunkIndex * shardSize))
+                }
+                chunkIndex++
+            }
+        }
+
+        return fileBuffer
     }
 }
