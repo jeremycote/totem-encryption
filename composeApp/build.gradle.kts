@@ -8,7 +8,6 @@ plugins {
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlinxSerialization)
-    alias(libs.plugins.sqldelight)
 }
 
 kotlin {
@@ -38,10 +37,6 @@ kotlin {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.okhttp)
-            implementation(libs.android.driver)
-            //implementation(libs.androidx.compose.material3)
-            //implementation(libs.androidx.lifecycle.viewmodel.compose)
-
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -58,10 +53,11 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinx.json)
             implementation(libs.ktor.network)
             implementation(libs.ktor.network.tls)
-            implementation(libs.runtime)
             implementation(libs.kotlinx.datetime)
             implementation(libs.koin.core)
             implementation(libs.jmdns)
+            implementation(libs.sqlite)
+            implementation(libs.sqlitebundled)
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
@@ -71,7 +67,6 @@ kotlin {
 
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
-            implementation(libs.native.driver)
         }
     }
 }
@@ -121,14 +116,6 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.register_renegades.totem"
             packageVersion = "1.0.0"
-        }
-    }
-}
-
-sqldelight {
-    databases {
-        create("TotemDatabase") {
-            packageName.set("com.register_renegades.totem.cache")
         }
     }
 }

@@ -11,7 +11,8 @@ import com.register_renegades.totem.network.InterfaceManager
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val systemInterfaceManager = AndroidSystemInterfaceManager()
-        Services.initShared(InterfaceManager(systemInterfaceManager))
+        Services.initInterfaceManager(InterfaceManager(systemInterfaceManager))
+        Services.initDatabase(applicationContext.filesDir.path)
 
         super.onCreate(savedInstanceState)
 

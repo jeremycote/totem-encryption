@@ -1,5 +1,6 @@
 package com.register_renegades.totem.network
 
+import com.register_renegades.totem.Services
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.utils.io.*
@@ -62,21 +63,40 @@ class SocketTCP() {
                 val bytes = ByteArray(1024)
 
                 val firstByte = receiveChannel.readByte()
-                bytes[0] = firstByte
+                var cursor = 0
+                bytes[cursor++] = firstByte
 
                 when (firstByte) {
                     getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_SAVE_FILE) -> {
                         println("Received save file request!")
                         val packetSize = receiveChannel.readAvailable(bytes, 1, bytes.size - 1) + 1
 
-                        // Must have 1 byte for type, 4 byte for size, 4 bytes for shards, 1 byte for user id, and 1+ bytes for name
-                        if (packetSize < 12) { return }
+                        // Must have 1 byte for type, 4 byte for size, 4 bytes for shards, 1 byte for user id, 8+ bytes for user ips, and 1+ bytes for name
+                        if (packetSize < 20) { return }
 
-                        val fileSize = bytesToInt(bytes.sliceArray(1 until 5))
-                        val numShards = bytesToInt(bytes.sliceArray(5 until 9))
-                        val numUsers = bytesToInt(bytes.sliceArray(9 until 10))
-                        val userId = bytesToInt(bytes.sliceArray(10 until 11))
-                        val fileName = String(bytes.sliceArray(11 until packetSize))
+                        val fileSize = bytesToInt(bytes.sliceArray(cursor until cursor + 4))
+                        cursor += 4
+
+                        val numShards = bytesToInt(bytes.sliceArray(cursor until cursor + 4))
+                        cursor += 4
+
+                        val numUsers = bytesToInt(bytes.sliceArray(cursor until cursor + 1))
+                        cursor++
+
+                        val userId = bytesToInt(bytes.sliceArray(cursor until cursor + 1))
+                        cursor++
+
+                        if (packetSize < 12 + numUsers * 4) { return }
+
+                        val userIps = mutableListOf<String>()
+                        for (i in 0..<numUsers) {
+                            val ipBytes = bytes.sliceArray(cursor until cursor + 4)
+                            cursor += 4
+                            val ip = "${ipBytes[0]}.${ipBytes[1]}.${ipBytes[2]}.${ipBytes[3]}"
+                            userIps.add(ip)
+                        }
+
+                        val fileName = String(bytes.sliceArray(cursor until packetSize))
 
                         val shouldAccept = delegate?.onRequestSaveFile(fileName, fileSize) ?: false
 
@@ -86,6 +106,11 @@ class SocketTCP() {
                         val numBytesReceived = receiveChannel.readAvailable(fileBytes, 0, fileBytes.size)
 
                         sendChannel.writeByte(if (numBytesReceived == fileSize / numShards) 1 else 0)
+
+                        if (numBytesReceived == fileSize / numShards) {
+                            println("File received! $fileName")
+                            Services.shared.database?.insertFileWithContent(fileName, fileBytes, userId)
+                        }
                     }
 
                     getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_LOAD_FILE) -> {
@@ -137,26 +162,47 @@ class SocketTCP() {
                 continue
             }
 
-            val bytes: ByteArray = ByteArray(1 + 4 + 4 + 1 + 1 + name.length)
-            bytes[0] = getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_SAVE_FILE)
-            bytes[1] = (fileSize shr 24).toByte()
-            bytes[2] = (fileSize shr 16).toByte()
-            bytes[3] = (fileSize shr 8).toByte()
-            bytes[4] = fileSize.toByte()
+            val bytes: ByteArray = ByteArray(1 + 4 + 4 + 1 + 1 + 4*numUsers + name.length)
+            var cursor: Int = 0
 
-            bytes[5] = (numShards shr 24).toByte()
-            bytes[6] = (numShards shr 16).toByte()
-            bytes[7] = (numShards shr 8).toByte()
-            bytes[8] = numShards.toByte()
+            bytes[cursor++] = getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_SAVE_FILE)
+            bytes[cursor++] = (fileSize shr 24).toByte()
+            bytes[cursor++] = (fileSize shr 16).toByte()
+            bytes[cursor++] = (fileSize shr 8).toByte()
+            bytes[cursor++] = fileSize.toByte()
+
+            bytes[cursor++] = (numShards shr 24).toByte()
+            bytes[cursor++] = (numShards shr 16).toByte()
+            bytes[cursor++] = (numShards shr 8).toByte()
+            bytes[cursor++] = numShards.toByte()
 
             // Num users
-            bytes[9] = numUsers.toByte()
+            bytes[cursor++] = numUsers.toByte()
 
             // user ID (For order)
-            bytes[10] = (i + 1).toByte()
+            bytes[cursor++] = (i + 1).toByte()
+
+            if (Services.shared.interfaceManager == null) {
+                println("Failed to get interface manager")
+
+                for (socket in sockets) {
+                    socket?.close()
+                }
+
+                return false
+            }
+
+            val allUsers = targets + NetworkAddress(Services.shared.interfaceManager!!.getInterface().ipAddress, 0)
+
+            for (j in 0..<numUsers) {
+                val targetIp = allUsers[j].getRawIp()
+                for (k in 0..<4) {
+                    bytes[cursor++] = targetIp[k]
+                }
+            }
 
             for (j in name.indices) {
-                bytes[j + 11] = name[j].code.toByte()
+                bytes[cursor++] = name[j].code.toByte()
             }
 
             writeChannels[i].writeFully(bytes)
@@ -195,6 +241,21 @@ class SocketTCP() {
                     continue
                 }
             }
+        }
+
+        if (targetsAccepted and sendSuccessful) {
+            val localFile = ByteArray(fileSize / numUsers)
+            var chunkIndex = 0
+            while (chunkIndex * shardSize < fileSize) {
+                // Local is user 0
+                if (chunkIndex % numUsers == 0) {
+                    contents.copyInto(localFile, chunkIndex * shardSize, if ((chunkIndex * (shardSize+1)) < fileSize) shardSize else fileSize - (chunkIndex * shardSize))
+                }
+                chunkIndex++
+            }
+
+            // Insert file into local database
+            Services.shared.database?.insertFileWithContent(name, localFile, 0)
         }
 
         for (socket in sockets) {

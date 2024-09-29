@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import com.register_renegades.totem.network.NetworkAddress
 import com.register_renegades.totem.network.NetworkEventListener
 import com.register_renegades.totem.network.SocketTCP
-import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -77,6 +76,10 @@ fun App() {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("IP Address: ${Services.shared.interfaceManager?.getInterface()?.ipAddress}")
             Text("Port: $port")
+
+            for (file in Services.shared.database?.getAllFiles() ?: emptyList()) {
+                Text("${file.name} | ${file.content.size} | ${file.shardIndex}")
+            }
 
             Button(onClick = {
                 sendPacket()
