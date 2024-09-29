@@ -35,7 +35,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.register_renegades.totem.disk.GalleryManager
-import com.register_renegades.totem.db.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -45,19 +44,33 @@ import com.register_renegades.totem.disk.rememberGalleryManager
 import com.register_renegades.totem.network.NetworkAddress
 import com.register_renegades.totem.network.NetworkEventListener
 import com.register_renegades.totem.network.SocketTCP
-import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.withContext
 
-fun sendPacket() {
+fun sendFile(name: String, targets: List<String>, bytes: ByteArray, onFileSent: (Boolean) -> Unit) {
     CoroutineScope(Dispatchers.IO).launch {
-        println("sendPacket coroutine launched")
         val sendSocket = SocketTCP()
 
-        val target = NetworkAddress("127.0.0.1", 5004)
-        val file = ByteArray(1024)
-        val success = sendSocket.initiateFileSave(listOf(target), "test.txt", file)
+        val targets = targets.map { target -> NetworkAddress(target, 5004)}
+        val success = sendSocket.initiateFileSave(targets, name, bytes)
 
-        println("File Save Success: $success")
+        println("Send file: $success")
+
+        onFileSent(success)
+    }
+}
+
+fun requestFile(name: String, targets: List<String>, onFileReceived: (ByteArray?) -> Unit) {
+    CoroutineScope(Dispatchers.IO).launch {
+        val sendSocket = SocketTCP()
+
+        val targets = targets.map { target -> NetworkAddress(target, 5004)}
+        val file = sendSocket.initiateFileLoad(targets, "test.txt")
+
+        if (file != null) {
+            println("Successfully loaded $name")
+        }
+
+        onFileReceived(file)
     }
 }
 
@@ -76,14 +89,12 @@ class AppDelegate(private val saveFile: (String, Int) -> Boolean, private val lo
 @Preview
 fun App() {
     MaterialTheme {
-        var imageSelected by remember { mutableStateOf<Boolean>(false) };
-        var fileName by remember {mutableStateOf<String>("File")}
-        val dummyList: List<File> = listOf(
-            File("Meme A", "Dank meme".toByteArray(), 0),
-            File("Meme B", "Dank meme".toByteArray(), 1)
-        )
-        var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+        var imageSelected by remember { mutableStateOf(false) };
+        var fileName by remember {mutableStateOf("File")}
+        val files by remember { mutableStateOf(Services.shared.database?.getAllFileNames() ?: listOf()) }
 
+        var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+        var imageBytes by remember { mutableStateOf<ByteArray?>(null) }
         val delegate = AppDelegate({ name, size ->
             run {
                 println("Save file $name with size $size")
@@ -109,9 +120,8 @@ fun App() {
 
         val galleryManager = rememberGalleryManager {
             CoroutineScope(Dispatchers.IO).launch {
-                var bytes: ByteArray?
                 imageBitmap = withContext(Dispatchers.Default) {
-                    bytes = it?.toByteArray()
+                    imageBytes = it?.toByteArray()
                     it?.toImageBitmap()
                 }
 
@@ -122,13 +132,48 @@ fun App() {
         }
 
         if(imageSelected){
-            val dialog = DialogWithImage(BitmapPainter(imageBitmap!!),"",{imageSelected = false})
+            val dialog = DialogWithImage(BitmapPainter(imageBitmap!!),"", {imageSelected = false}) { name, targets ->
+                println("Sending $name to $targets")
+
+                if (imageBytes == null) {
+                    throw IllegalArgumentException("Image bytes is null")
+                }
+
+                val realTargets = MutableList(0) { _ -> "" }
+
+                for (target in targets) {
+                    if (target != "") {
+                        realTargets.add(target)
+                    }
+                }
+
+                println("targets: $targets $realTargets")
+
+                sendFile(name, realTargets, imageBytes!!) { success ->
+                    println("Sent file: $success")
+                }
+
+                imageSelected = false
+            }
         }
 
         Column {
             Text("${Services.shared.interfaceManager?.getInterface()?.ipAddress}:$port")
-            Button(onClick = { sendPacket() }) {
+            Button(onClick = { sendFile("meme.png", listOf("127.0.0.1"), ByteArray(1500)) { success ->
+                println(
+                    "Sent file: $success"
+                )
+            }
+            }) {
                 Text("Send")
+            }
+            Button(onClick = { requestFile("meme.png", listOf("127.0.0.1")) { file ->
+                println(
+                    "Sent file: $file"
+                )
+            }
+            }) {
+                Text("Receive")
             }
             Text(text="Totem Crypto")//, textAlign = Center)
             PlusButton(galleryManager)
@@ -136,23 +181,18 @@ fun App() {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 128.dp)
             ) {
-                items(dummyList) { file ->
+                items(files) { file ->
                     FileItem(file)
                 }
             }
-//        LazyColumn{
-//            items(dummyList){file ->
-//
-//            }
-//        }
         }
     }
 
 }
 @Composable
-fun FileItem(file: File){
+fun FileItem(name: String){
     Button(onClick = {}){
-        Text(file.name)
+        Text(name)
     }
 }
 @Composable
@@ -174,10 +214,10 @@ fun DialogWithImage(
     painter: Painter,
     imageDescription: String,
     dismissDialog: () -> Unit,
-    //nameStoreFunc: () -> Unit
+    submitDialog: (name: String, targets: List<String>) -> Unit
 ) {
     var currentText by remember { mutableStateOf("")}
-    var destinations by remember { mutableStateOf(mutableListOf("1","2","3","4")) }
+    var destinations by remember { mutableStateOf(mutableListOf("", "", "", "")) }
     Dialog(onDismissRequest = { dismissDialog() }) {
         // Draw a rectangle shape with rounded corners inside the dialog
         Card(
@@ -206,23 +246,12 @@ fun DialogWithImage(
                 )
                 TextField(value = currentText, onValueChange = {currentText = it},label = {Text("")})
                 Text(text = "Specify the destination IP adresses:")
-                LazyColumn{
-                    items(
-                        items = destinations,
-                        key = {destination -> destination.hashCode()}) { destination ->
-                        DestinationField(destination,destinations,)
+
+                for (i in 0..<4) {
+                    DestinationField(destinations[i]) { newText ->
+                        destinations[i] = newText
                     }
-//                    for(destination in destinations){
-//                        DestinationField(destination)
-//                    }
-//                    destinations.map { destination ->
-//                        DestinationField(destination)
-//                    }
                 }
-//                Button(onClick = {destinations.add("${destinations.size + 1}")
-//                println(destinations)}){
-//                    Text("+")
-//                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth(),
@@ -235,29 +264,22 @@ fun DialogWithImage(
                         Text("Cancel")
                     }
                     Button(onClick = {
-                        sendPacket()
-                        storeFileName()
-                        println(currentText)
+                        submitDialog(currentText, destinations)
                     }) {
                         Text("Send")
                     }
-//                    TextButton(
-//                        onClick = { onConfirmation() },
-//                        modifier = Modifier.padding(8.dp),
-//                    ) {
-//                        Text("Confirm")
-//                    }
                 }
             }
-
         }
     }
 }
 @Composable
-fun DestinationField(ip:String,ipList:List<String>){
-    val index = ipList.indexOf(ip)
-    var currentText by remember { mutableStateOf(ipList[index])}
-    TextField(value = currentText, onValueChange = {currentText = it})
+fun DestinationField(ip:String, onValueChange: (String) -> Unit){
+    var currentText by remember {mutableStateOf("")}
+    TextField(value = currentText, onValueChange = {
+        currentText = it
+        onValueChange(it)
+    })
 }
 
 fun storeFileName() {
