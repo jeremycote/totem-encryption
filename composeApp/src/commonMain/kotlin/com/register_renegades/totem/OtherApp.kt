@@ -43,16 +43,17 @@ fun OtherApp() {
         val dummyList: List<File> = listOf(File(1, "Dank meme"), File(1,"Homework"))
         val coroutineScope = rememberCoroutineScope()
         var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-        var imageBytes:ByteArray
         val galleryManager = rememberGalleryManager {
             coroutineScope.launch {
+                var bytes: ByteArray?
                 val bitmap = withContext(Dispatchers.Default) {
+                    bytes = it?.toByteArray()
                     it?.toImageBitmap()
                 }
                 imageBitmap = bitmap
-                imageBytes = copyPixelsToBuffer()
             }
         }
+        //val filenameManager{}
         Column {
             Text(text="Totem Crypto")//, textAlign = Center)
             PlusButton(galleryManager)
