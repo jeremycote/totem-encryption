@@ -27,12 +27,14 @@ fun sendPacket() {
 
         val target = NetworkAddress("127.0.0.1", 5004)
         val file = ByteArray(1024)
-        sendSocket.initiateFileSave(listOf(target), "test.txt", file)
+        val success = sendSocket.initiateFileSave(listOf(target), "test.txt", file)
+
+        println("File Save Success: $success")
     }
 }
 
-class AppDelegate(private val saveFile: (String, UInt) -> Boolean, private val loadFile: (String) -> Boolean): NetworkEventListener {
-    override fun onRequestSaveFile(name: String, size: UInt): Boolean {
+class AppDelegate(private val saveFile: (String, Int) -> Boolean, private val loadFile: (String) -> Boolean): NetworkEventListener {
+    override fun onRequestSaveFile(name: String, size: Int): Boolean {
         return saveFile(name, size)
     }
 

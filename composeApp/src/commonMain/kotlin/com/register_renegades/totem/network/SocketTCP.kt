@@ -6,8 +6,10 @@ import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.*
 
+val shardSize = 512
+
 interface NetworkEventListener {
-    fun onRequestSaveFile(name: String, size: UInt): Boolean
+    fun onRequestSaveFile(name: String, size: Int): Boolean
     fun onRequestLoadFile(name: String): Boolean
 }
 
@@ -31,12 +33,15 @@ fun getNetworkRequestTypeFromByte(byte: Byte): NetworkRequestType {
     }
 }
 
-fun bytesToUInt(bytes: ByteArray): UInt {
-    require(bytes.size == 4) { "Byte array must have exactly 4 elements" }
-    return ((bytes[0].toUInt() and 0xFFu) shl 24) or
-            ((bytes[1].toUInt() and 0xFFu) shl 16) or
-            ((bytes[2].toUInt() and 0xFFu) shl 8) or
-            (bytes[3].toUInt() and 0xFFu)
+fun bytesToInt(bytes: ByteArray): Int {
+    var result = 0
+
+    for (i in bytes.indices) {
+        result = result shl 8
+        result = result or (bytes[i].toInt() and 0xFF)
+    }
+
+    return result
 }
 
 class SocketTCP() {
@@ -64,15 +69,23 @@ class SocketTCP() {
                         println("Received save file request!")
                         val packetSize = receiveChannel.readAvailable(bytes, 1, bytes.size - 1) + 1
 
-                        // Must have 1 byte for type, 4 byte for size and 1+ bytes for name
-                        if (packetSize < 6) { return }
+                        // Must have 1 byte for type, 4 byte for size, 4 bytes for shards, 1 byte for user id, and 1+ bytes for name
+                        if (packetSize < 12) { return }
 
-                        val fileSize = bytesToUInt(bytes.sliceArray(1 until 5))
-                        val fileName = String(bytes.sliceArray(5 until packetSize))
+                        val fileSize = bytesToInt(bytes.sliceArray(1 until 5))
+                        val numShards = bytesToInt(bytes.sliceArray(5 until 9))
+                        val numUsers = bytesToInt(bytes.sliceArray(9 until 10))
+                        val userId = bytesToInt(bytes.sliceArray(10 until 11))
+                        val fileName = String(bytes.sliceArray(11 until packetSize))
 
                         val shouldAccept = delegate?.onRequestSaveFile(fileName, fileSize) ?: false
 
                         sendChannel.writeByte(if (shouldAccept) 1 else 0)
+
+                        val fileBytes = ByteArray(fileSize / numShards)
+                        val numBytesReceived = receiveChannel.readAvailable(fileBytes, 0, fileBytes.size)
+
+                        sendChannel.writeByte(if (numBytesReceived == fileSize / numShards) 1 else 0)
                     }
 
                     getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_LOAD_FILE) -> {
@@ -95,7 +108,7 @@ class SocketTCP() {
 
     fun setDelegate(delegate: NetworkEventListener?) { this.delegate = delegate }
 
-    suspend fun initiateFileSave(targets: List<NetworkAddress>, name: String, contents: ByteArray) {
+    suspend fun initiateFileSave(targets: List<NetworkAddress>, name: String, contents: ByteArray): Boolean {
 
         val sockets = MutableList<Socket?>(targets.size) { _ -> null }
 
@@ -108,7 +121,12 @@ class SocketTCP() {
             println("Failed to connect to targets")
         }
 
+        val readChannels = MutableList<ByteReadChannel>(targets.size) { i -> sockets[i]!!.openReadChannel() }
+        val writeChannels = MutableList<ByteWriteChannel>(targets.size) { i -> sockets[i]!!.openWriteChannel(autoFlush = true) }
+
         val fileSize = contents.size
+        val numUsers = targets.size + 1
+        val numShards = if (contents.size % shardSize == 0) (contents.size / shardSize) else (contents.size / shardSize) + 1
 
         var targetsAccepted = true
         for (i in sockets.indices) {
@@ -119,36 +137,71 @@ class SocketTCP() {
                 continue
             }
 
-            val sendChannel = sockets[i]?.openWriteChannel(autoFlush = true)
-            val readChannel = sockets[i]?.openReadChannel()
-
-            val bytes: ByteArray = ByteArray(1 + 4 + name.length)
+            val bytes: ByteArray = ByteArray(1 + 4 + 4 + 1 + 1 + name.length)
             bytes[0] = getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_SAVE_FILE)
             bytes[1] = (fileSize shr 24).toByte()
             bytes[2] = (fileSize shr 16).toByte()
             bytes[3] = (fileSize shr 8).toByte()
             bytes[4] = fileSize.toByte()
 
+            bytes[5] = (numShards shr 24).toByte()
+            bytes[6] = (numShards shr 16).toByte()
+            bytes[7] = (numShards shr 8).toByte()
+            bytes[8] = numShards.toByte()
+
+            // Num users
+            bytes[9] = numUsers.toByte()
+
+            // user ID (For order)
+            bytes[10] = (i + 1).toByte()
+
             for (j in name.indices) {
-                bytes[j + 5] = name[j].code.toByte()
+                bytes[j + 11] = name[j].code.toByte()
             }
 
-            sendChannel?.writeFully(bytes)
+            writeChannels[i].writeFully(bytes)
 
             println("Sent bytes to ${targets[i].ip}:${targets[i].port}")
 
-            val responseFirstByte = readChannel?.readByte()
+            val responseFirstByte = readChannels[i].readByte()
             println("Response: $responseFirstByte")
 
-            if (responseFirstByte?.toInt() == 0) {
+            if (responseFirstByte.toInt() == 0) {
                 println("User denied file save request")
                 targetsAccepted = false
-                return
+                continue
             }
         }
 
-        // Split the file
-        // Send the file
+        var sendSuccessful = true
+        if (targetsAccepted) {
+            // Split the file
+            for (i in sockets.indices) {
+                // Split file into chunks
+                val userId = i + 1
+                var chunkIndex = 0
+                while (chunkIndex * shardSize < fileSize) {
+                    if (chunkIndex % numUsers == userId) {
+                        writeChannels[i].writeFully(contents, chunkIndex * shardSize, if ((chunkIndex * (shardSize+1)) < fileSize) shardSize else fileSize - (chunkIndex * shardSize))
+                    }
+                    chunkIndex++
+                }
+
+                val received = readChannels[i].readByte()
+
+                if (received.toInt() == 0) {
+                    println("Send not acknowledged")
+                    sendSuccessful = false
+                    continue
+                }
+            }
+        }
+
+        for (socket in sockets) {
+            socket?.close()
+        }
+
+        return targetsAccepted and sendSuccessful
     }
 
     fun initiateFileLoad(name: String) {
