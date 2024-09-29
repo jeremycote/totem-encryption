@@ -103,14 +103,12 @@ class SocketTCP() {
                         sendChannel.writeByte(if (shouldAccept) 1 else 0)
 
                         val fileBytes = ByteArray(fileSize / numShards)
-                        val numBytesReceived = receiveChannel.readAvailable(fileBytes, 0, fileBytes.size)
+                        val numBytesReceived = receiveChannel.readFully(fileBytes, 0, fileBytes.size)
 
-                        sendChannel.writeByte(if (numBytesReceived == fileSize / numShards) 1 else 0)
+                        sendChannel.writeByte(1)
 
-                        if (numBytesReceived == fileSize / numShards) {
-                            println("File received! $fileName")
-                            Services.shared.database?.insertFileWithContent(fileName, fileBytes, userId, userIps)
-                        }
+                        println("File received! $fileName")
+                        Services.shared.database?.insertFileWithContent(fileName, fileBytes, userId, userIps)
                     }
 
                     getNetworkRequestTypeAsByte(NetworkRequestType.REQUEST_LOAD_FILE) -> {
