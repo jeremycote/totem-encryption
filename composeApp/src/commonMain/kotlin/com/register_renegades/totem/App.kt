@@ -19,6 +19,8 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,56 +31,100 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.register_renegades.totem.disk.GalleryManager
-import com.register_renegades.totem.entity.File
-import com.register_renegades.totem.network.SocketUDPListener
-import com.register_renegades.totem.network.UDPPacketSender
-import io.ktor.utils.io.core.toByteArray
+import com.register_renegades.totem.db.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import com.register_renegades.totem.disk.rememberGalleryManager
+import com.register_renegades.totem.network.NetworkAddress
+import com.register_renegades.totem.network.NetworkEventListener
+import com.register_renegades.totem.network.SocketTCP
+import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.withContext
-import kotlin.reflect.typeOf
 
 fun sendPacket() {
     CoroutineScope(Dispatchers.IO).launch {
-        val packetSender = UDPPacketSender()
-        val data = "Hello, UDP!".toByteArray()
+        println("sendPacket coroutine launched")
+        val sendSocket = SocketTCP()
 
-//        packetSender.sendPacket(data, targetAddress = "255.255.255.255", targetPort = 5000)
-        packetSender.broadcastPacket(data, targetPort = 5000)
+        val target = NetworkAddress("127.0.0.1", 5004)
+        val file = ByteArray(1024)
+        val success = sendSocket.initiateFileSave(listOf(target), "test.txt", file)
+
+        println("File Save Success: $success")
+    }
+}
+
+class AppDelegate(private val saveFile: (String, Int) -> Boolean, private val loadFile: (String) -> Boolean):
+    NetworkEventListener {
+    override fun onRequestSaveFile(name: String, size: Int): Boolean {
+        return saveFile(name, size)
+    }
+
+    override fun onRequestLoadFile(name: String): Boolean {
+        return loadFile(name)
     }
 }
 
 @Composable
 @Preview
-fun OtherApp() {
+fun App() {
     MaterialTheme {
         var imageSelected by remember { mutableStateOf<Boolean>(false) };
-        val listener = SocketUDPListener(port = 5000)
-        val dummyList: List<File> = listOf(File(1, "Dank meme"), File(1,"Homework"))
-        val coroutineScope = rememberCoroutineScope()
+        val dummyList: List<File> = listOf(
+            File("Meme A", "Dank meme".toByteArray(), 0),
+            File("Meme B", "Dank meme".toByteArray(), 1)
+        )
         var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+
+        val delegate = AppDelegate({ name, size ->
+            run {
+                println("Save file $name with size $size")
+                return@AppDelegate true
+            }
+        }, { name ->
+            run {
+                println("Load file $name")
+                return@AppDelegate true
+            }
+        })
+
+        var port = 5004
+
+        LaunchedEffect(Unit) {
+            val socketListener = SocketTCP()
+            socketListener.setDelegate(delegate)
+
+            CoroutineScope(Dispatchers.IO).launch {
+                socketListener.startListening(port)
+            }
+        }
+
         val galleryManager = rememberGalleryManager {
-            coroutineScope.launch {
+            CoroutineScope(Dispatchers.IO).launch {
                 var bytes: ByteArray?
-                val bitmap = withContext(Dispatchers.Default) {
+                imageBitmap = withContext(Dispatchers.Default) {
                     bytes = it?.toByteArray()
                     it?.toImageBitmap()
                 }
-                imageBitmap = bitmap
+
                 if(imageBitmap != null){
                     imageSelected = true
                 }
             }
         }
+
         if(imageSelected){
-            Text("Hello")
             DialogWithImage(onDismissRequest = {}, { sendImage() }, BitmapPainter(imageBitmap!!),"")
         }
+
         Column {
+            Text("${Services.shared.interfaceManager?.getInterface()?.ipAddress}:$port")
+            Button(onClick = { sendPacket() }) {
+                Text("Send")
+            }
             Text(text="Totem Crypto")//, textAlign = Center)
             PlusButton(galleryManager)
             Text(text = "Encrypted Files")
@@ -166,25 +212,12 @@ fun DialogWithImage(
                     }
                 }
             }
+
+            Button(onClick = {
+                sendPacket()
+            }) {
+                Text("Send")
+            }
         }
     }
 }
-//@Composable
-//fun()
-//override fun onPermissionStatus(
-//    permissionType: PermissionType,
-//    status: PermissionStatus
-//) {
-//    when (status) {
-//        PermissionStatus.GRANTED -> {
-//            when (permissionType) {
-//                PermissionType.CAMERA -> launchCamera = true
-//                PermissionType.GALLERY -> launchGallery = true
-//            }
-//        }
-//
-//        else -> {
-//            permissionRationalDialog = true
-//        }
-//    }
-//}

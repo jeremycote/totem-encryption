@@ -2,8 +2,8 @@ package com.register_renegades.totem
 
 import com.register_renegades.totem.network.InterfaceManager
 import com.register_renegades.totem.network.SystemInterfaceManager
-import org.koin.core.context.startKoin
-import org.koin.dsl.module
+import platform.Foundation.NSDocumentDirectory
+import platform.Foundation.NSSearchPathForDirectoriesInDomains
 
 /**
  * Initialize Koin dependency injection
@@ -12,5 +12,8 @@ import org.koin.dsl.module
 fun initDependencies(systemInterfaceManager: SystemInterfaceManager) {
     println("Initializing Coin!")
     println("Kotlin IP: ${systemInterfaceManager.getIP()}, Mask: ${systemInterfaceManager.getMask()}")
-    Services.initShared(InterfaceManager(systemInterfaceManager))
+    Services.initInterfaceManager(InterfaceManager(systemInterfaceManager))
+
+    val paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, 1u, true)
+    Services.initDatabase(paths.first() as String)
 }

@@ -1,17 +1,11 @@
 package com.register_renegades.totem.network
 
-actual class InterfaceManager actual constructor(private val system: SystemInterfaceManager) {
-    actual fun getInterface(): Interface {
-        return Interface(system.getIP(), system.getMask())
-    }
-}
-
 class AndroidSystemInterfaceManager: SystemInterfaceManager {
     override fun getIP(): String {
-        return ""
+        return "0.0.0.0"
     }
 
     override fun getMask(): String {
-        return ""
+        return "255.255.255.0"
     }
 }

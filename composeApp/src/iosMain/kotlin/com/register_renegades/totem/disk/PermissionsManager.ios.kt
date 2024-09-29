@@ -1,7 +1,6 @@
 package com.register_renegades.totem.disk
 
 import androidx.compose.runtime.Composable
-import com.register_renegades.totem.PermissionCallback
 import com.register_renegades.totem.disk.PermissionHandler
 
 actual class PermissionsManager actual constructor(callback: PermissionCallback) : PermissionHandler {
